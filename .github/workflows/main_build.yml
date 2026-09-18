@@ -47,7 +47,7 @@ jobs:
   # ---------------------------------------------------------------------------
   detect-boards:
     name: Detect supported HAOS boards
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -137,7 +137,7 @@ jobs:
   detect-versions:
     name: Detect pending HAOS versions
     needs: detect-boards
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     outputs:
@@ -211,7 +211,7 @@ jobs:
     name: Build ${{ matrix.version }} / ${{ matrix.board }}
     needs: [detect-boards, detect-versions]
     if: needs.detect-versions.outputs.has_versions == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
     strategy:
@@ -856,7 +856,7 @@ jobs:
     if: >-
       always() &&
       github.event_name == 'pull_request'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Report build result
         run: |
@@ -881,7 +881,7 @@ jobs:
       always() &&
       github.event_name != 'pull_request' &&
       needs.detect-versions.outputs.has_versions == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     strategy:
       matrix:
         version: ${{ fromJson(needs.detect-versions.outputs.versions) }}
