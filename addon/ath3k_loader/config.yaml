@@ -1,0 +1,22 @@
+name: "AR3012 Bluetooth driver loader"
+version: "0.1.0"
+slug: "ath3k_loader"
+description: >-
+  Loads the externally built Atheros AR3012 Bluetooth driver on HAOS OVA.
+  Unsupported community app for the CyberDeck integrated USB controller.
+url: "https://github.com/atostivint/hasos_more_modules"
+arch:
+  - amd64
+startup: system
+boot: auto
+init: false
+protected: false
+apparmor: false
+kernel_modules: true
+privileged:
+  - SYS_MODULE
+  - SYS_ADMIN
+map:
+  - type: share
+    read_only: true
+    path: /share
