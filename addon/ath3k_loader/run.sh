@@ -7,6 +7,7 @@ FIRMWARE_ROOT="/share/firmware"
 HOST_FIRMWARE_ROOT="/mnt/data/supervisor/share/firmware"
 USB_VENDOR="13d3"
 USB_PRODUCT="3362"
+LOADED_BY_US=0
 
 log() {
   echo "[ath3k-loader] $*"
@@ -70,6 +71,7 @@ load_once() {
       log "insmod failed"
       return 1
     }
+    LOADED_BY_US=1
   else
     log "ath3k is already loaded"
   fi
@@ -105,6 +107,14 @@ done
 if [ ! -e /sys/class/bluetooth/hci0 ]; then
   log "AR3012 was not initialized; keeping the app alive for diagnostics"
 fi
+
+cleanup() {
+  if [ "${LOADED_BY_US}" -eq 1 ]; then
+    log "Unloading ath3k during app shutdown"
+    rmmod ath3k 2>/dev/null || log "ath3k could not be unloaded (it may be in use)"
+  fi
+}
+trap cleanup TERM INT
 
 # Keep the service running so Supervisor does not restart it in a tight loop.
 while sleep 3600; do :; done

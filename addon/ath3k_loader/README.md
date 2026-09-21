@@ -23,3 +23,8 @@ search path and verifies that `hci0` appears.
 
 This mechanism is not supported by Home Assistant. Keep the EchoMuse Bluetooth
 proxy as a fallback and replace the module after every HAOS kernel update.
+
+To roll back, stop or disable this app. The shutdown handler attempts to unload
+`ath3k` only when this app loaded it. If the module is in use, stop it from
+Home Assistant first and run `rmmod ath3k` from an explicitly privileged
+maintenance shell, or restore the preserved Proxmox snapshot.
