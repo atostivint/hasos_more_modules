@@ -13,6 +13,7 @@ init: false
 protected: false
 apparmor: false
 kernel_modules: true
+full_access: true
 privileged:
   - SYS_MODULE
   - SYS_ADMIN
