@@ -26,14 +26,9 @@ additional `.ko` files, the workflow discovers them with `modinfo` and ships
 them automatically only when the full dependency chain is available.
 
 <!-- modules-table:start -->
-| Module    | Description                                                                    | Notes                                                                                                                                                                                                                 |
-| :-------- | :----------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `xfs.ko`  | XFS filesystem support                                                         |                                                                                                                                                                                                                       |
-| `nfsd.ko` | NFS server daemon                                                              |                                                                                                                                                                                                                       |
-| `nfs.ko`  | NFS client support                                                             |                                                                                                                                                                                                                       |
-| `quic.ko` | QUIC: A UDP-Based Multiplexed and Secure Transport (RFC 9000) – from lxin/quic |                                                                                                                                                                                                                       |
-| `zfs.ko`  | ZFS filesystem support – from openzfs/zfs                                      | ⚠️ Not available on `rpi3_64`, `rpi4_64`, `rpi5_64`, `yellow`: ZFS (CDDL) is license-incompatible with GPL-only kernel symbols exposed by Raspberry Pi kernels (kernel_neon_begin/end, bpf_trace_run*, trace_event_*).|
-| `ath3k.ko` | Atheros AR3012 Bluetooth USB driver                                           |                                                                                                                                                                                                                       |
+| Module | Description | Notes |
+| :-------- | :------------- | :----- |
+| `ath3k.ko` | Atheros AR3012 Bluetooth USB driver |  |
 <!-- modules-table:end -->
 
 Supported architectures: **x86_64** and **aarch64**.
