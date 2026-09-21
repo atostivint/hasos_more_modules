@@ -82,6 +82,17 @@
           "value": "m"
         }
       ]
+    },
+    {
+      "name": "ath3k",
+      "artifact": "ath3k.ko",
+      "description": "Atheros AR3012 Bluetooth USB driver",
+      "configs": [
+        {
+          "symbol": "CONFIG_BT_ATH3K",
+          "value": "m"
+        }
+      ]
     }
   ]
 }
