@@ -17,9 +17,16 @@ The `share` map corresponds to the HAOS host directory
 /share/firmware/ar3k/ramps_0x01020200_40.dfu
 ```
 
-The app checks the running kernel version before loading a module. It does not
-attempt to load a module for another kernel. The firmware path written to
-`firmware_class.path` is deliberately the HAOS host path
+The app checks the running kernel version and exact module `vermagic` before
+loading a module. It does not attempt to load a module for another kernel.
+The expected value is:
+
+```text
+6.18.52-haos SMP preempt mod_unload
+```
+
+The firmware path written to `firmware_class.path` is deliberately the HAOS
+host path
 `/mnt/data/supervisor/share/firmware`, not `/share/firmware`: the kernel reads
 firmware from the host's initial mount namespace, while `/share` exists only in
 the app container. The app then verifies that `hci0` appears.

@@ -47,6 +47,13 @@ load_once() {
     return 1
   fi
 
+  expected_vermagic="${kernel} SMP preempt mod_unload"
+  actual_vermagic="$(modinfo -F vermagic "${module}" 2>/dev/null || true)"
+  if [ "${actual_vermagic}" != "${expected_vermagic}" ]; then
+    log "Refusing ${module}: vermagic='${actual_vermagic}', expected='${expected_vermagic}'"
+    return 1
+  fi
+
   if [ ! -f "${FIRMWARE_ROOT}/ar3k/AthrBT_0x01020200.dfu" ] || \
      [ ! -f "${FIRMWARE_ROOT}/ar3k/ramps_0x01020200_40.dfu" ]; then
     log "Required AR3012 firmware files are missing"
