@@ -54,6 +54,9 @@ load_once() {
   fi
 
   if [ -e /sys/module/firmware_class/parameters/path ]; then
+    # Firmware loading runs in the host's initial mount namespace. The app's
+    # /share bind mount is not visible there, so the kernel parameter must use
+    # the HAOS host path rather than the container path.
     printf '%s' "${HOST_FIRMWARE_ROOT}" > /sys/module/firmware_class/parameters/path || {
       log "Cannot set firmware_class.path"
       return 1
