@@ -43,7 +43,7 @@ files onto HAOS by hand.
 
 | App | Purpose |
 | :--- | :--- |
-| `ath3k_loader` | Loads `ath3k.ko` for the Atheros AR3012 USB Bluetooth controller (`13d3:3362`) on HAOS OVA, verifies the module `vermagic`, points the kernel firmware loader at the HAOS host share and waits for `hci0`. |
+| `ath3k_loader` | Power-loss recovery for the Atheros AR3012 USB Bluetooth controller (`13d3:3362`) on HAOS OVA: loads `ath3k.ko` when the chip comes back without firmware, verifies the module `vermagic`, points the kernel firmware loader at the HAOS host share and waits for `hci0`. |
 
 The app bundles the module for the HAOS release it targets, so no manual upload
 step is needed. Install it by adding
@@ -51,6 +51,12 @@ step is needed. Install it by adding
 **Settings → Apps → Install app → ⋮ → Repositories**. See
 [`addon/ath3k_loader/README.md`](addon/ath3k_loader/README.md) for provenance,
 kernel-update behaviour and rollback.
+
+HAOS ships no `ath3k.ko` and `btusb` has no AR3012 firmware path, so nothing
+re-uploads the AR3012 firmware at boot: the controller only works while the chip
+keeps that firmware in RAM. A VM restart preserves it, a power cycle does not.
+Keeping this app enabled (`boot: auto`) is what covers the power-cycle case; see
+[Power-loss recovery](addon/ath3k_loader/README.md#power-loss-recovery).
 
 ---
 
