@@ -20,6 +20,9 @@ USB Bluetooth controller (`13d3:3362`), which HAOS does not ship a driver for.
    6.18.52-haos SMP preempt mod_unload
    ```
 
+   The comparison collapses whitespace because `modinfo -F vermagic` pads the
+   value with a trailing space, which would otherwise reject a valid module.
+
 3. Checks that the two AR3012 firmware files are present:
 
    ```text
