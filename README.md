@@ -35,10 +35,30 @@ Supported architectures: **x86_64** and **aarch64**.
 
 ---
 
+## Companion apps
+
+This repository also acts as a Home Assistant app repository (it provides
+`repository.yaml` at its root), so the modules can be consumed without copying
+files onto HAOS by hand.
+
+| App | Purpose |
+| :--- | :--- |
+| `ath3k_loader` | Loads `ath3k.ko` for the Atheros AR3012 USB Bluetooth controller (`13d3:3362`) on HAOS OVA, verifies the module `vermagic`, points the kernel firmware loader at the HAOS host share and waits for `hci0`. |
+
+The app bundles the module for the HAOS release it targets, so no manual upload
+step is needed. Install it by adding
+`https://github.com/atostivint/hasos_more_modules` under
+**Settings → Apps → Install app → ⋮ → Repositories**. See
+[`addon/ath3k_loader/README.md`](addon/ath3k_loader/README.md) for provenance,
+kernel-update behaviour and rollback.
+
+---
+
 ## Table of Contents
 
 - [hasos\_more\_modules](#hasos_more_modules)
   - [Table of Contents](#table-of-contents)
+  - [Companion apps](#companion-apps)
   - [Scope of the project](#scope-of-the-project)
   - [How the project works](#how-the-project-works)
   - [Installing modules on HAOS (Unsupported)](#installing-modules-on-haos-unsupported)

@@ -2,15 +2,32 @@
 
 set -u
 
-MODULE_ROOT="/share/ath3k/modules"
+# Module search order: bundled in the image first, then a user-provided copy.
+MODULE_DIRS="/opt/ath3k/modules /share/ath3k/modules"
+# Container view of the share (used only to check that the firmware is present).
 FIRMWARE_ROOT="/share/firmware"
+# Firmware loading runs in the host's initial mount namespace, so the kernel
+# parameter must point at the HAOS host path, not the container bind mount.
 HOST_FIRMWARE_ROOT="/mnt/data/supervisor/share/firmware"
+REQUIRED_FIRMWARE="ar3k/AthrBT_0x01020200.dfu ar3k/ramps_0x01020200_40.dfu"
 USB_VENDOR="13d3"
 USB_PRODUCT="3362"
 LOADED_BY_US=0
 
 log() {
   echo "[ath3k-loader] $*"
+}
+
+find_module() {
+  kernel="$1"
+  for dir in ${MODULE_DIRS}; do
+    candidate="${dir}/${kernel}/ath3k.ko"
+    if [ -f "${candidate}" ]; then
+      printf '%s\n' "${candidate}"
+      return 0
+    fi
+  done
+  return 1
 }
 
 find_usb_interface() {
@@ -40,10 +57,10 @@ try_rebind() {
 
 load_once() {
   kernel="$(uname -r)"
-  module="${MODULE_ROOT}/${kernel}/ath3k.ko"
+  module="$(find_module "${kernel}" || true)"
 
-  if [ ! -f "${module}" ]; then
-    log "No module for kernel ${kernel}: ${module}"
+  if [ -z "${module}" ]; then
+    log "No module for kernel ${kernel} in: ${MODULE_DIRS}"
     return 1
   fi
 
@@ -54,16 +71,14 @@ load_once() {
     return 1
   fi
 
-  if [ ! -f "${FIRMWARE_ROOT}/ar3k/AthrBT_0x01020200.dfu" ] || \
-     [ ! -f "${FIRMWARE_ROOT}/ar3k/ramps_0x01020200_40.dfu" ]; then
-    log "Required AR3012 firmware files are missing"
-    return 1
-  fi
+  for fw in ${REQUIRED_FIRMWARE}; do
+    if [ ! -f "${FIRMWARE_ROOT}/${fw}" ]; then
+      log "Required AR3012 firmware is missing: ${FIRMWARE_ROOT}/${fw}"
+      return 1
+    fi
+  done
 
   if [ -e /sys/module/firmware_class/parameters/path ]; then
-    # Firmware loading runs in the host's initial mount namespace. The app's
-    # /share bind mount is not visible there, so the kernel parameter must use
-    # the HAOS host path rather than the container path.
     printf '%s' "${HOST_FIRMWARE_ROOT}" > /sys/module/firmware_class/parameters/path || {
       log "Cannot set firmware_class.path"
       return 1
@@ -71,7 +86,7 @@ load_once() {
   fi
 
   if [ -e /sys/class/bluetooth/hci0 ]; then
-    log "hci0 already exists; no module load needed"
+    log "hci0 already exists; no module load needed (${module})"
     return 0
   fi
 

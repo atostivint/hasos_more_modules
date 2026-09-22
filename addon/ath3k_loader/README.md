@@ -1,40 +1,84 @@
 # AR3012 Bluetooth loader
 
-This is an unsupported Home Assistant OS local app for the CyberDeck integrated
-Atheros AR3012 USB Bluetooth controller (`13d3:3362`).
+Unsupported Home Assistant OS app for the CyberDeck integrated Atheros AR3012
+USB Bluetooth controller (`13d3:3362`), which HAOS does not ship a driver for.
 
-It expects the matching module at:
+## What it does
+
+1. Finds `ath3k.ko` for the running kernel, bundled in the image first, then a
+   user-provided copy:
+
+   ```text
+   /opt/ath3k/modules/<kernel-version>/ath3k.ko   (bundled, primary)
+   /share/ath3k/modules/<kernel-version>/ath3k.ko (fallback)
+   ```
+
+2. Refuses to load anything whose `vermagic` differs from the running kernel.
+   For HAOS 18.3 the expected value is:
+
+   ```text
+   6.18.52-haos SMP preempt mod_unload
+   ```
+
+3. Checks that the two AR3012 firmware files are present:
+
+   ```text
+   /share/firmware/ar3k/AthrBT_0x01020200.dfu
+   /share/firmware/ar3k/ramps_0x01020200_40.dfu
+   ```
+
+4. Points the kernel firmware loader at the HAOS host path
+   `/mnt/data/supervisor/share/firmware` (the `share` map is
+   `/mnt/data/supervisor/share` on the host). The host path is required because
+   firmware loading runs in the host's initial mount namespace, where the app's
+   `/share` bind mount does not exist.
+5. Loads the module, rebinds the USB interface if needed, and waits for `hci0`.
+
+The module is only unloaded on shutdown when this app loaded it.
+
+## Bundled module provenance
+
+| Item | Value |
+| --- | --- |
+| HAOS version | `18.3` |
+| Board | `ova` |
+| Kernel | `6.18.52-haos` |
+| Build | GitHub Actions run `35702890707`, artifact `modules-18.3-ova` |
+| SHA-256 | `5dee3490a90ff3265ffb617450992156d4431dfb318fc38783f253b5f5f61e3e` |
+| Path in image | `/opt/ath3k/modules/6.18.52-haos/ath3k.ko` |
+
+The module carries the USB alias
 
 ```text
-/share/ath3k/modules/<kernel-version>/ath3k.ko
+usb:v13D3p3362d*dc*dsc*dp*ic*isc*ip*in*
 ```
 
-The `share` map corresponds to the HAOS host directory
-`/mnt/data/supervisor/share`. The AR3012 firmware files must be present at:
+The module is bundled, not downloaded, so the app installs and starts without
+any manual file placement.
 
-```text
-/share/firmware/ar3k/AthrBT_0x01020200.dfu
-/share/firmware/ar3k/ramps_0x01020200_40.dfu
-```
+## Requirements
 
-The app checks the running kernel version and exact module `vermagic` before
-loading a module. It does not attempt to load a module for another kernel.
-The expected value is:
+- `arch: amd64` (HAOS OVA on x86-64).
+- Supervisor privileges: `kernel_modules`, `full_access`, `SYS_MODULE`,
+  `SYS_ADMIN`, AppArmor disabled.
+- The two firmware files above, installed on the HAOS host.
 
-```text
-6.18.52-haos SMP preempt mod_unload
-```
+## Kernel updates
 
-The firmware path written to `firmware_class.path` is deliberately the HAOS
-host path
-`/mnt/data/supervisor/share/firmware`, not `/share/firmware`: the kernel reads
-firmware from the host's initial mount namespace, while `/share` exists only in
-the app container. The app then verifies that `hci0` appears.
+`ath3k.ko` is valid only for the kernel it was built for. After a HAOS update
+changes `uname -r`, this app logs a vermagic mismatch and stays idle instead of
+loading a wrong module. Rebuild the module for the new kernel, add it under
+`addon/ath3k_loader/modules/<new-kernel>/`, bump the app version and reinstall.
 
-This mechanism is not supported by Home Assistant. Keep the EchoMuse Bluetooth
-proxy as a fallback and replace the module after every HAOS kernel update.
+## Rollback
 
-To roll back, stop or disable this app. The shutdown handler attempts to unload
-`ath3k` only when this app loaded it. If the module is in use, stop it from
-Home Assistant first and run `rmmod ath3k` from an explicitly privileged
-maintenance shell, or restore the preserved Proxmox snapshot.
+- Stop or uninstall the app: the shutdown handler unloads `ath3k` only if this
+  app loaded it.
+- If the module is in use, stop Home Assistant first, then restore the preserved
+  Proxmox snapshot.
+- The EchoMuse Bluetooth proxy remains the fallback scanner
+  (`sensor.chambre_alex_bt_proxy_ble_advertisements`).
+
+## Status
+
+This mechanism is community work and is not supported by Home Assistant.

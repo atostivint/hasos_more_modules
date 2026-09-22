@@ -32,6 +32,8 @@ env/
 output_modules/
 operating-system/
 *.ko
+# Kernel modules bundled with the ath3k loader app must be versioned with it.
+!addon/ath3k_loader/modules/**/*.ko
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Editor / OS artefacts
