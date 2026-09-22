@@ -1,7 +1,14 @@
 # AR3012 Bluetooth loader
 
 Unsupported Home Assistant OS app for the CyberDeck integrated Atheros AR3012
-USB Bluetooth controller (`13d3:3362`), which HAOS does not ship a driver for.
+USB Bluetooth controller (`13d3:3362`).
+
+**Superseded on HAOS 18.3 / kernel `6.18.52-haos`.** After a full reboot of the
+HAOS VM the controller came up on its own: `btusb` (shipped with HAOS) claimed
+`13d3:3362` and initialised it from the firmware files that live in the HAOS
+firmware path, so no `ath3k` module load was needed and this app short-circuited.
+See [Post-reboot result](#post-reboot-result-2026-09-22). The app is disabled;
+the section below documents what it does if the adapter ever fails to come up.
 
 ## What it does
 
@@ -117,13 +124,61 @@ Verified on the CyberDeck HAOS VM:
   (`13d3:3362`, `Atheros Communications`), so Home Assistant is actively
   scanning through it.
 
-Not verified yet:
+## Post-reboot result (2026-09-22)
 
-- `insmod` from inside the container. `ath3k` was already loaded by a manual
-  test, so the app has always short-circuited on "hci0 already exists" and its
-  own load path has never run. The container reports `CAP_SYS_MODULE: present`,
-  which is necessary but not proof. The next HAOS reboot is the real test.
+One full reboot of the HAOS VM (`hassio.host_reboot`; HAOS 18.3, kernel
+`6.18.52-haos`, boot at 12:03 Paris) was allowed to test persistence. The
+adapter works after the reboot with no manual intervention and no `ath3k`
+module — but **not** through this app.
+
+App log after the reboot (verbatim, as returned newest-first):
+
+```text
+[ath3k-loader] ath3k module: not loaded
+[ath3k-loader] hci0 already exists; no module load needed (/opt/ath3k/modules/6.18.52-haos/ath3k.ko)
+[ath3k-loader] remounted /sys read-write
+[ath3k-loader] sysfs mounted on /run/ath3k-sys but module/firmware_class/parameters/path is not writable
+```
+
+The expected `Loading /opt/ath3k/modules/6.18.52-haos/ath3k.ko` line never
+appeared: the app short-circuited on `hci0 already exists`, which is exactly
+the outcome the persistence test was meant to rule out. **Criterion not met.**
+
+Why it short-circuited — the premise of the app was wrong:
+
+- HAOS itself points the kernel firmware loader at the persistent share:
+  `/sys/module/firmware_class/parameters/path` = `/mnt/data/supervisor/share/firmware`.
+- The two AR3012 firmware files are there (`ar3k/AthrBT_0x01020200.dfu`,
+  `ar3k/ramps_0x01020200_40.dfu`) and `/mnt/data` survives reboots.
+- `btusb` therefore initialises the controller by itself at boot. `ath3k` only
+  uploads firmware, so once the firmware is reachable it is never needed:
+  `/proc/modules` has no `ath3k`, while `/sys/bus/usb/drivers/btusb/` owns
+  `9-1:1.0` and `9-1:1.1`.
+
+Evidence collected after the reboot:
+
+| Check | Result |
+| --- | --- |
+| `dmesg` | `usb 9-1: New USB device found, idVendor=13d3, idProduct=3362`; no firmware or `ath3k` errors |
+| `/proc/modules` | `ath3k` absent, `btusb` present |
+| `hci0` | under `.../usb9/9-1/9-1:1.0/bluetooth/hci0`, i.e. the dongle, driven by `btusb` |
+| HA bluetooth entry `01M344RRQM1YP5DFHMSAZHWY0V` diagnostics | `hci0`: `vendor_id 13d3`, `product_id 3362`, `E0:B9:A5:F6:3E:EB`, `powered: true`, `advertise: true`, `issues: []` |
+| HA log, search `ath3k` and `btusb` | 0 entries each |
+
+Two side findings:
+
+- The app cannot write `firmware_class.path` from a container on this build
+  (`module/firmware_class/parameters/path is not writable`, even on the second
+  sysfs instance). It does not matter: the host value is already correct.
+- On kernel 6.18 the `bluetooth` sysfs class no longer exposes `address`,
+  `name` or `type`. A missing `/sys/class/bluetooth/hci0/address` is **not** a
+  sign of a dead adapter; reading it that way caused a wrong mid-test diagnosis.
 
 ## Status
 
-This mechanism is community work and is not supported by Home Assistant.
+- The AR3012 works permanently on this HAOS/kernel **without** this app.
+- The app is redundant (it always finds `hci0` at boot) and is **disabled** in
+  Home Assistant. It stays in the repository as the fallback for the case where
+  HAOS fails to initialise the adapter (probe failure, firmware unavailable):
+  then `hci0` is missing and its load path runs.
+- This mechanism is community work and is not supported by Home Assistant.
