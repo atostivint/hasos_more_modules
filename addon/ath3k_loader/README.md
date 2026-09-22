@@ -113,6 +113,9 @@ Verified on the CyberDeck HAOS VM:
   this attribute).
 - `hci0` exists and Home Assistant holds a loaded `bluetooth` config entry for
   `Atheros Communications Bluetooth USB Host Controller (E0:B9:A5:F6:3E:EB)`.
+  Its diagnostics report the adapter as `powered: true` and `advertise: true`
+  (`13d3:3362`, `Atheros Communications`), so Home Assistant is actively
+  scanning through it.
 
 Not verified yet:
 
