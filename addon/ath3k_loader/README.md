@@ -241,7 +241,7 @@ chip, which the test scope excluded.
   back without firmware, `hci0` is absent, so it loads `ath3k` and the firmware is
   uploaded again.
 - Still unproven: that path. The decisive test is a real power cut of the chip —
-  see [Re-plug test](#re-plug-test).
+  see [Cold power-cycle test](#cold-power-cycle-test).
 - This mechanism is community work and is not supported by Home Assistant.
 
 ## Host reboot result (2026-09-22)
@@ -267,14 +267,20 @@ so this run does not exercise the recovery path. Two explanations remain open:
 the chip holds its firmware in serial flash, or the reboot never cut the USB port
 power and the RAM copy survived.
 
-## Re-plug test
+## Cold power-cycle test
 
-Cut the chip's power without rebooting anything:
+The AR3012 is not a USB dongle: it is the Bluetooth half of an internal combo
+card (`IMC Networks Atheros AR3012 Bluetooth 4.0 Adapter`) wired to the board's
+USB bus — on the host it hangs off an internal 6-port hub on Bus 001. It cannot
+be unplugged for a test.
 
-1. unplug the AR3012 dongle from the CyberDeck host;
-2. in HAOS, `hci0` must disappear (`dmesg`, `ls /sys/class/bluetooth/`);
-3. plug the dongle back in;
-4. the app watchdog should log
+A plain reboot can leave the card powered, and on 2026-09-22 it did: the adapter
+came back operational with no firmware upload. Only a cold power cycle is a real
+cut:
+
+1. shut the host down and power it back on (not a reboot);
+2. once HAOS is up, check `ls /sys/class/bluetooth/` and `/proc/modules`;
+3. the app watchdog should log
    `Loading /opt/ath3k/modules/<kernel>/ath3k.ko`, then
    `AR3012 is available as hci0`, and `hci0` should come back.
 
