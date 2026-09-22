@@ -179,15 +179,13 @@ load_once() {
     fi
   done
 
+  # HAOS already sets firmware_class.path to the persistent share, so failing to
+  # write it must never block a power-loss recovery: warn and carry on. If the
+  # effective path were wrong the load would fail loudly (no hci0) anyway.
   if ! ensure_sys_rw; then
-    log "No writable sysfs instance for ${FW_PATH_ATTR}"
-    FATAL=1
-    return 1
-  fi
-  if ! sysfs_write "${FW_PATH_ATTR}" "${HOST_FIRMWARE_ROOT}"; then
-    log "Cannot write firmware_class.path through ${SYS_RW_ROOT}"
-    FATAL=1
-    return 1
+    log "WARNING: no writable sysfs instance for ${FW_PATH_ATTR}; continuing"
+  elif ! sysfs_write "${FW_PATH_ATTR}" "${HOST_FIRMWARE_ROOT}"; then
+    log "WARNING: cannot write firmware_class.path via ${SYS_RW_ROOT}; continuing"
   fi
 
   if [ -e /sys/class/bluetooth/hci0 ]; then
