@@ -13,9 +13,11 @@ REQUIRED_FIRMWARE="ar3k/AthrBT_0x01020200.dfu ar3k/ramps_0x01020200_40.dfu"
 USB_VENDOR="13d3"
 USB_PRODUCT="3362"
 FW_PATH_ATTR="module/firmware_class/parameters/path"
+ATH3K_DRIVER_DIR="bus/usb/drivers/ath3k"
 SYS_RW_ROOT=""
 LOADED_BY_US=0
 FATAL=0
+FORCE_RELOAD="$(bashio::config 'force_reload' 2>/dev/null || echo false)"
 
 log() {
   echo "[ath3k-loader] $*"
@@ -25,6 +27,10 @@ log() {
 # unreliable: compare on collapsed whitespace instead.
 normalize_ws() {
   printf '%s' "$1" | tr -s '[:space:]' ' ' | sed -e 's/^ //' -e 's/ $//'
+}
+
+is_loaded() {
+  grep -q '^ath3k ' /proc/modules
 }
 
 # App containers get /sys mounted read-only. A second sysfs instance mounted
@@ -85,15 +91,22 @@ find_usb_interface() {
   return 1
 }
 
-try_rebind() {
+sysfs_write() {
+  # $1 = path relative to the writable sysfs root, $2 = value
+  if [ -z "${SYS_RW_ROOT}" ]; then
+    return 1
+  fi
+  printf '%s' "$2" > "${SYS_RW_ROOT}/$1" 2>/dev/null
+}
+
+unbind_interface() {
   iface="$1"
-  name="$(basename "${iface}")"
-  if [ -e "/sys/bus/usb/devices/${name}/driver/unbind" ]; then
-    printf '%s' "${name}" > "/sys/bus/usb/devices/${name}/driver/unbind" 2>/dev/null || true
-  fi
-  if [ -e /sys/bus/usb/drivers/ath3k/bind ]; then
-    printf '%s' "${name}" > /sys/bus/usb/drivers/ath3k/bind 2>/dev/null || true
-  fi
+  sysfs_write "${ATH3K_DRIVER_DIR}/unbind" "$(basename "${iface}")"
+}
+
+bind_interface() {
+  iface="$1"
+  sysfs_write "${ATH3K_DRIVER_DIR}/bind" "$(basename "${iface}")"
 }
 
 diagnostics() {
@@ -121,13 +134,43 @@ diagnostics() {
   log "ath3k in /proc/modules: $(grep '^ath3k ' /proc/modules || echo no)"
   log "bluetooth class: $(ls -1 /sys/class/bluetooth 2>/dev/null | tr '\n' ' ')"
   log "usb interfaces for ${USB_VENDOR}:${USB_PRODUCT}: $(find_usb_interface || echo none)"
+  log "ath3k driver dir: $(ls -1 "${SYS_RW_ROOT:-/sys}/${ATH3K_DRIVER_DIR}" 2>/dev/null | tr '\n' ' ' || echo none)"
   log "--- end diagnostics ---"
 }
 
-report_hci() {
+report_state() {
+  log "ath3k module: $(grep '^ath3k ' /proc/modules || echo 'not loaded')"
   if [ -e /sys/class/bluetooth/hci0/address ]; then
     log "hci0 address: $(cat /sys/class/bluetooth/hci0/address)"
   fi
+}
+
+# Opt-in recovery path: unbind the adapter and unload ath3k so the full
+# load sequence below runs again. Used to verify the boot path without a reboot.
+forced_reload() {
+  if [ "${FORCE_RELOAD}" != "true" ]; then
+    return 0
+  fi
+  if ! is_loaded; then
+    log "force_reload requested but ath3k is not loaded"
+    return 0
+  fi
+  if ! ensure_sys_rw; then
+    log "force_reload: no writable sysfs instance"
+    return 0
+  fi
+  iface="$(find_usb_interface || true)"
+  if [ -n "${iface}" ]; then
+    log "force_reload: unbinding $(basename "${iface}")"
+    unbind_interface "${iface}"
+    sleep 1
+  fi
+  log "force_reload: unloading ath3k"
+  if ! rmmod ath3k 2>/dev/null; then
+    log "force_reload: rmmod failed"
+    return 0
+  fi
+  sleep 1
 }
 
 load_once() {
@@ -159,7 +202,7 @@ load_once() {
     FATAL=1
     return 1
   fi
-  if ! printf '%s' "${HOST_FIRMWARE_ROOT}" > "${SYS_RW_ROOT}/${FW_PATH_ATTR}"; then
+  if ! sysfs_write "${FW_PATH_ATTR}" "${HOST_FIRMWARE_ROOT}"; then
     log "Cannot write firmware_class.path through ${SYS_RW_ROOT}"
     FATAL=1
     return 1
@@ -167,11 +210,11 @@ load_once() {
 
   if [ -e /sys/class/bluetooth/hci0 ]; then
     log "hci0 already exists; no module load needed (${module})"
-    report_hci
+    report_state
     return 0
   fi
 
-  if ! grep -q '^ath3k ' /proc/modules; then
+  if ! is_loaded; then
     log "Loading ${module} for kernel ${kernel}"
     if ! insmod "${module}"; then
       log "insmod failed"
@@ -186,21 +229,23 @@ load_once() {
   if [ ! -e /sys/class/bluetooth/hci0 ]; then
     iface="$(find_usb_interface || true)"
     if [ -n "${iface}" ]; then
-      log "Rebinding USB interface $(basename "${iface}") to ath3k"
-      try_rebind "${iface}"
+      log "Binding USB interface $(basename "${iface}") to ath3k"
+      bind_interface "${iface}"
       sleep 2
     fi
   fi
 
   if [ -e /sys/class/bluetooth/hci0 ]; then
     log "AR3012 is available as hci0"
-    report_hci
+    report_state
     return 0
   fi
 
   log "ath3k loaded but hci0 is not available yet"
   return 1
 }
+
+forced_reload
 
 # Supervisor may start this app before the USB pass-through is enumerated.
 for attempt in $(seq 1 60); do

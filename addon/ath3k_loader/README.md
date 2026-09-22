@@ -72,6 +72,16 @@ any manual file placement.
   `SYS_ADMIN`, AppArmor disabled.
 - The two firmware files above, installed on the HAOS host.
 
+## Options
+
+| Option | Default | Purpose |
+| --- | --- | --- |
+| `force_reload` | `false` | Unbind the adapter, unload `ath3k` and run the full load sequence again. Use it to verify the boot path without rebooting, or to recover a stuck adapter. |
+
+With `force_reload: true` the app rebinds the USB interface, unloads the module
+and reloads it, which briefly interrupts `hci0` for Home Assistant. Set it back
+to `false` afterwards.
+
 ## Kernel updates
 
 `ath3k.ko` is valid only for the kernel it was built for. After a HAOS update

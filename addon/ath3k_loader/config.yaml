@@ -1,5 +1,5 @@
 name: "AR3012 Bluetooth driver loader"
-version: "0.2.2"
+version: "0.2.3"
 slug: "ath3k_loader"
 description: >-
   Loads the externally built Atheros AR3012 Bluetooth driver on HAOS OVA.
@@ -21,3 +21,7 @@ map:
   - type: share
     read_only: true
     path: /share
+options:
+  force_reload: false
+schema:
+  force_reload: bool
