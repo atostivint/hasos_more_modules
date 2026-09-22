@@ -208,8 +208,9 @@ Expected app log in that case (this is the evidence to look for):
 
 Prerequisites: the bundled module must match the running kernel (see
 [Kernel updates](#kernel-updates)) and the two firmware files must still be in
-the share. The app retries for five minutes, so a slow USB enumeration is
-tolerated.
+the share. The app is a watchdog: it re-checks every 15 s for as long as it
+runs, so a slow enumeration or a re-plugged dongle is caught whenever it
+happens.
 
 If the adapter is still missing afterwards, the likely cause is `btusb` having
 claimed the device first: the log then repeats
