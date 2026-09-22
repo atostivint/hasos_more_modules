@@ -17,6 +17,9 @@ ATH3K_DRIVER_DIR="bus/usb/drivers/ath3k"
 SYS_RW_ROOT=""
 LOADED_BY_US=0
 FATAL=0
+# The watchdog re-checks this often: small enough to catch a re-plugged dongle or
+# a late USB enumeration, cheap enough to run forever.
+WATCH_INTERVAL=15
 
 log() {
   echo "[ath3k-loader] $*"
@@ -225,18 +228,14 @@ load_once() {
   return 1
 }
 
-# Supervisor may start this app before the USB pass-through is enumerated.
-for attempt in $(seq 1 60); do
-  if load_once; then
-    break
-  fi
-  if [ "${FATAL}" -eq 1 ]; then
-    log "unrecoverable condition reached; stopping retries"
-    break
-  fi
-  log "Retry ${attempt}/60 in 5 seconds"
-  sleep 5
-done
+# The USB pass-through can enumerate after this app starts, and a power cycle or
+# a re-plug makes the chip reappear at any time: watch, do not retry once.
+load_once || true
+
+if [ "${FATAL}" -eq 1 ]; then
+  log "unrecoverable condition reached; not retrying"
+  diagnostics
+fi
 
 if [ ! -e /sys/class/bluetooth/hci0 ]; then
   log "AR3012 was not initialized; keeping the app alive for diagnostics"
@@ -251,5 +250,26 @@ cleanup() {
 }
 trap cleanup TERM INT
 
-# Keep the service running so Supervisor does not restart it in a tight loop.
-while sleep 3600; do :; done
+# Watchdog: keep the service running (Supervisor must not restart it in a tight
+# loop) and pick the chip up whenever it comes back without firmware.
+attempt=0
+while :; do
+  if [ -e /sys/class/bluetooth/hci0 ]; then
+    attempt=0
+    sleep "${WATCH_INTERVAL}"
+    continue
+  fi
+  attempt=$((attempt + 1))
+  if load_once; then
+    log "AR3012 recovered by the watchdog (attempt ${attempt})"
+    report_state
+    attempt=0
+  elif [ "${FATAL}" -eq 1 ]; then
+    log "unrecoverable condition reached; watchdog idle"
+    diagnostics
+    while sleep 3600; do :; done
+  elif [ $((attempt % 20)) -eq 1 ]; then
+    log "AR3012 still absent; attempt ${attempt}, next in ${WATCH_INTERVAL}s"
+  fi
+  sleep "${WATCH_INTERVAL}"
+done

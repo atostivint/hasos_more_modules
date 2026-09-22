@@ -227,11 +227,60 @@ chip, which the test scope excluded.
 
 ## Status
 
-- The AR3012 works across VM restarts **without** this app, because the chip
-  keeps its firmware while it stays powered. That is not proof of permanence.
-- The app is the only mechanism that can push the firmware back after a power
-  cycle. It is **enabled** (`boot: auto`, `startup: system`) as the recovery
-  path: when the chip has no firmware, `hci0` is absent and its load path runs.
-- Unproven: the power-loss path itself (see
-  [Power-loss recovery](#power-loss-recovery)).
+- **Verified 2026-09-22**: after a full hypervisor reboot the AR3012 came back on
+  its own — `13d3:3362`, `btusb` bound, `hci0` up, `powered`/`advertise` true —
+  with **no `ath3k` load and no firmware upload**. The app logged the
+  `hci0 already exists` short-circuit. See
+  [Host reboot result](#host-reboot-result-2026-09-22).
+- That result does not prove the chip can be flashed from scratch: a host reboot
+  can keep the USB ports powered, so a surviving RAM copy and a chip with serial
+  flash firmware look identical from here.
+- The app is therefore **enabled** (`boot: auto`, `startup: system`) as the
+  recovery path, with a watchdog that re-checks every 15 s: if the chip ever comes
+  back without firmware, `hci0` is absent, so it loads `ath3k` and the firmware is
+  uploaded again.
+- Still unproven: that path. The decisive test is a real power cut of the chip —
+  see [Re-plug test](#re-plug-test).
 - This mechanism is community work and is not supported by Home Assistant.
+
+## Host reboot result (2026-09-22)
+
+The hypervisor hosting the HAOS VM was rebooted end to end (host uptime back to
+minutes, VM restarted, guest uptime 11 minutes when the state below was read).
+
+    ATH3K_IN_MODULES: 0
+    BTUSB_IN_MODULES: 1
+    HCI: hci0
+    usb 9-1: new full-speed USB device number 2 using xhci_hcd
+    usb 9-1: New USB device found, idVendor=13d3, idProduct=3362, bcdDevice= 0.02
+    btusb: 9-1:1.0 9-1:1.1
+    ath3k: (none)
+
+App log: `ath3k module: not loaded`, then
+`hci0 already exists; no module load needed`. Bluetooth diagnostics for
+`01M344RRQM1YP5DFHMSAZHWY0V`: `powered: true`, `advertise: true`,
+`passive_scan: true`.
+
+The controller never entered boot mode and no driver asked for a firmware file,
+so this run does not exercise the recovery path. Two explanations remain open:
+the chip holds its firmware in serial flash, or the reboot never cut the USB port
+power and the RAM copy survived.
+
+## Re-plug test
+
+Cut the chip's power without rebooting anything:
+
+1. unplug the AR3012 dongle from the CyberDeck host;
+2. in HAOS, `hci0` must disappear (`dmesg`, `ls /sys/class/bluetooth/`);
+3. plug the dongle back in;
+4. the app watchdog should log
+   `Loading /opt/ath3k/modules/<kernel>/ath3k.ko`, then
+   `AR3012 is available as hci0`, and `hci0` should come back.
+
+If the adapter stays dead, `btusb` claimed the device first. Manual recovery from
+the HAOS host shell, **only while `hci0` is absent**:
+
+    echo -n "9-1:1.0" > /sys/bus/usb/drivers/btusb/unbind
+    echo -n "9-1:1.0" > /sys/bus/usb/drivers/ath3k/bind
+
+Never unbind while `hci0` is present and working.
