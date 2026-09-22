@@ -41,6 +41,15 @@ USB Bluetooth controller (`13d3:3362`), which HAOS does not ship a driver for.
    `/share` bind mount does not exist.
 6. Loads the module, rebinds the USB interface if needed, and waits for `hci0`.
 
+`ath3k` only uploads the AR3012 firmware; `btusb` (shipped with HAOS) then owns
+the controller and provides `hci0`. That is why the loaded `ath3k` module shows
+a zero reference count while `hci0` is present and working.
+
+Do not unbind a live interface to "test" a reload: writing to
+`/sys/bus/usb/drivers/ath3k/unbind` killed the app container (Supervisor
+reported exit code 1) with no further output. The boot path is exercised by
+rebooting HAOS, not by tearing down a working adapter.
+
 The module stays loaded when the app stops: unloading `ath3k` while Home
 Assistant is using `hci0` would remove the adapter from under the Bluetooth
 integration. Disable the app and reboot HAOS to revert completely.
@@ -74,13 +83,7 @@ any manual file placement.
 
 ## Options
 
-| Option | Default | Purpose |
-| --- | --- | --- |
-| `force_reload` | `false` | Unbind the adapter, unload `ath3k` and run the full load sequence again. Use it to verify the boot path without rebooting, or to recover a stuck adapter. |
-
-With `force_reload: true` the app rebinds the USB interface, unloads the module
-and reloads it, which briefly interrupts `hci0` for Home Assistant. Set it back
-to `false` afterwards.
+None. The app takes no configuration.
 
 ## Kernel updates
 
@@ -98,6 +101,25 @@ loading a wrong module. Rebuild the module for the new kernel, add it under
 - Restore the preserved Proxmox snapshot if needed.
 - The EchoMuse Bluetooth proxy remains the fallback scanner
   (`sensor.chambre_alex_bt_proxy_ble_advertisements`).
+
+## Verification status
+
+Verified on the CyberDeck HAOS VM:
+
+- The bundled module matches the running kernel (`vermagic`
+  `6.18.52-haos SMP preempt mod_unload`, alias `13d3:3362`).
+- The app sets `firmware_class.path` from inside the container (writable sysfs
+  obtained by remounting `/sys`; a second sysfs instance is not writable for
+  this attribute).
+- `hci0` exists and Home Assistant holds a loaded `bluetooth` config entry for
+  `Atheros Communications Bluetooth USB Host Controller (E0:B9:A5:F6:3E:EB)`.
+
+Not verified yet:
+
+- `insmod` from inside the container. `ath3k` was already loaded by a manual
+  test, so the app has always short-circuited on "hci0 already exists" and its
+  own load path has never run. The container reports `CAP_SYS_MODULE: present`,
+  which is necessary but not proof. The next HAOS reboot is the real test.
 
 ## Status
 

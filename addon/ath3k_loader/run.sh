@@ -17,7 +17,6 @@ ATH3K_DRIVER_DIR="bus/usb/drivers/ath3k"
 SYS_RW_ROOT=""
 LOADED_BY_US=0
 FATAL=0
-FORCE_RELOAD="$(bashio::config 'force_reload' 2>/dev/null || echo false)"
 
 log() {
   echo "[ath3k-loader] $*"
@@ -99,14 +98,18 @@ sysfs_write() {
   printf '%s' "$2" > "${SYS_RW_ROOT}/$1" 2>/dev/null
 }
 
-unbind_interface() {
-  iface="$1"
-  sysfs_write "${ATH3K_DRIVER_DIR}/unbind" "$(basename "${iface}")"
-}
-
 bind_interface() {
   iface="$1"
   sysfs_write "${ATH3K_DRIVER_DIR}/bind" "$(basename "${iface}")"
+}
+
+# CAP_SYS_MODULE (bit 16) is what lets a container call insmod at all.
+has_sys_module_cap() {
+  cap="$(awk '/^CapEff:/ {print $2}' /proc/self/status 2>/dev/null || true)"
+  [ -n "${cap}" ] || return 1
+  # CapEff is hex; test bit 16 with a right shift.
+  val=$((0x${cap}))
+  [ $(( (val >> 16) & 1 )) -eq 1 ]
 }
 
 diagnostics() {
@@ -135,6 +138,12 @@ diagnostics() {
   log "bluetooth class: $(ls -1 /sys/class/bluetooth 2>/dev/null | tr '\n' ' ')"
   log "usb interfaces for ${USB_VENDOR}:${USB_PRODUCT}: $(find_usb_interface || echo none)"
   log "ath3k driver dir: $(ls -1 "${SYS_RW_ROOT:-/sys}/${ATH3K_DRIVER_DIR}" 2>/dev/null | tr '\n' ' ' || echo none)"
+  log "hci0 driver: $(basename "$(readlink -f /sys/class/bluetooth/hci0/device/driver 2>/dev/null)" 2>/dev/null || echo unknown)"
+  if has_sys_module_cap; then
+    log "CAP_SYS_MODULE: present"
+  else
+    log "CAP_SYS_MODULE: absent (insmod would fail)"
+  fi
   log "--- end diagnostics ---"
 }
 
@@ -142,35 +151,8 @@ report_state() {
   log "ath3k module: $(grep '^ath3k ' /proc/modules || echo 'not loaded')"
   if [ -e /sys/class/bluetooth/hci0/address ]; then
     log "hci0 address: $(cat /sys/class/bluetooth/hci0/address)"
+    log "hci0 driver: $(basename "$(readlink -f /sys/class/bluetooth/hci0/device/driver 2>/dev/null)" 2>/dev/null || echo unknown)"
   fi
-}
-
-# Opt-in recovery path: unbind the adapter and unload ath3k so the full
-# load sequence below runs again. Used to verify the boot path without a reboot.
-forced_reload() {
-  if [ "${FORCE_RELOAD}" != "true" ]; then
-    return 0
-  fi
-  if ! is_loaded; then
-    log "force_reload requested but ath3k is not loaded"
-    return 0
-  fi
-  if ! ensure_sys_rw; then
-    log "force_reload: no writable sysfs instance"
-    return 0
-  fi
-  iface="$(find_usb_interface || true)"
-  if [ -n "${iface}" ]; then
-    log "force_reload: unbinding $(basename "${iface}")"
-    unbind_interface "${iface}"
-    sleep 1
-  fi
-  log "force_reload: unloading ath3k"
-  if ! rmmod ath3k 2>/dev/null; then
-    log "force_reload: rmmod failed"
-    return 0
-  fi
-  sleep 1
 }
 
 load_once() {
@@ -244,8 +226,6 @@ load_once() {
   log "ath3k loaded but hci0 is not available yet"
   return 1
 }
-
-forced_reload
 
 # Supervisor may start this app before the USB pass-through is enumerated.
 for attempt in $(seq 1 60); do
