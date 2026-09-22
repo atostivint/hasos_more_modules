@@ -30,14 +30,20 @@ USB Bluetooth controller (`13d3:3362`), which HAOS does not ship a driver for.
    /share/firmware/ar3k/ramps_0x01020200_40.dfu
    ```
 
-4. Points the kernel firmware loader at the HAOS host path
+4. Obtains a writable sysfs view to set `firmware_class.path`, because app
+   containers receive `/sys` read-only: if `/sys` is not writable it mounts a
+   second `sysfs` instance under `/run/ath3k-sys` (same kernel, same
+   parameters) or remounts `/sys` read-write.
+5. Points the kernel firmware loader at the HAOS host path
    `/mnt/data/supervisor/share/firmware` (the `share` map is
    `/mnt/data/supervisor/share` on the host). The host path is required because
    firmware loading runs in the host's initial mount namespace, where the app's
    `/share` bind mount does not exist.
-5. Loads the module, rebinds the USB interface if needed, and waits for `hci0`.
+6. Loads the module, rebinds the USB interface if needed, and waits for `hci0`.
 
-The module is only unloaded on shutdown when this app loaded it.
+The module stays loaded when the app stops: unloading `ath3k` while Home
+Assistant is using `hci0` would remove the adapter from under the Bluetooth
+integration. Disable the app and reboot HAOS to revert completely.
 
 ## Bundled module provenance
 
@@ -75,10 +81,11 @@ loading a wrong module. Rebuild the module for the new kernel, add it under
 
 ## Rollback
 
-- Stop or uninstall the app: the shutdown handler unloads `ath3k` only if this
-  app loaded it.
-- If the module is in use, stop Home Assistant first, then restore the preserved
-  Proxmox snapshot.
+- Stop or disable the app: the module stays loaded so the Bluetooth adapter is
+  not pulled out from under Home Assistant.
+- To remove the driver entirely: disable the app, then reboot HAOS (the module
+  and `firmware_class.path` are reset on boot).
+- Restore the preserved Proxmox snapshot if needed.
 - The EchoMuse Bluetooth proxy remains the fallback scanner
   (`sensor.chambre_alex_bt_proxy_ble_advertisements`).
 

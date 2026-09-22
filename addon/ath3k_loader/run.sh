@@ -12,8 +12,10 @@ HOST_FIRMWARE_ROOT="/mnt/data/supervisor/share/firmware"
 REQUIRED_FIRMWARE="ar3k/AthrBT_0x01020200.dfu ar3k/ramps_0x01020200_40.dfu"
 USB_VENDOR="13d3"
 USB_PRODUCT="3362"
+FW_PATH_ATTR="module/firmware_class/parameters/path"
+SYS_RW_ROOT=""
 LOADED_BY_US=0
-VERMAGIC_MISMATCH=0
+FATAL=0
 
 log() {
   echo "[ath3k-loader] $*"
@@ -23,6 +25,38 @@ log() {
 # unreliable: compare on collapsed whitespace instead.
 normalize_ws() {
   printf '%s' "$1" | tr -s '[:space:]' ' ' | sed -e 's/^ //' -e 's/ $//'
+}
+
+# App containers get /sys mounted read-only. A second sysfs instance mounted
+# here is read-write and exposes the same kernel parameters, because sysfs
+# attributes are kernel objects, not mount-local state.
+ensure_sys_rw() {
+  if [ -n "${SYS_RW_ROOT}" ] && [ -w "${SYS_RW_ROOT}/${FW_PATH_ATTR}" ]; then
+    return 0
+  fi
+  if [ -w "/sys/${FW_PATH_ATTR}" ]; then
+    SYS_RW_ROOT="/sys"
+    log "using /sys directly"
+    return 0
+  fi
+  local tmp="/run/ath3k-sys"
+  mkdir -p "${tmp}"
+  if mount -t sysfs sysfs "${tmp}" 2>/dev/null; then
+    if [ -w "${tmp}/${FW_PATH_ATTR}" ]; then
+      SYS_RW_ROOT="${tmp}"
+      log "mounted a read-write sysfs instance on ${tmp}"
+      return 0
+    fi
+    log "sysfs mounted on ${tmp} but ${FW_PATH_ATTR} is not writable"
+  else
+    log "mounting sysfs on ${tmp} failed"
+  fi
+  if mount -o remount,rw /sys 2>/dev/null && [ -w "/sys/${FW_PATH_ATTR}" ]; then
+    SYS_RW_ROOT="/sys"
+    log "remounted /sys read-write"
+    return 0
+  fi
+  return 1
 }
 
 find_module() {
@@ -79,10 +113,10 @@ diagnostics() {
       log "firmware MISSING in container: /share/firmware/${fw}"
     fi
   done
-  if [ -e /sys/module/firmware_class/parameters/path ]; then
-    log "firmware_class.path=$(cat /sys/module/firmware_class/parameters/path)"
-  else
-    log "firmware_class.path is absent"
+  log "/sys mount: $(grep ' /sys ' /proc/mounts || echo unknown)"
+  log "sysfs rw root: ${SYS_RW_ROOT:-none}"
+  if [ -n "${SYS_RW_ROOT}" ] && [ -e "${SYS_RW_ROOT}/${FW_PATH_ATTR}" ]; then
+    log "firmware_class.path=$(cat "${SYS_RW_ROOT}/${FW_PATH_ATTR}")"
   fi
   log "ath3k in /proc/modules: $(grep '^ath3k ' /proc/modules || echo no)"
   log "bluetooth class: $(ls -1 /sys/class/bluetooth 2>/dev/null | tr '\n' ' ')"
@@ -109,7 +143,7 @@ load_once() {
   actual_vermagic="$(normalize_ws "$(modinfo -F vermagic "${module}" 2>/dev/null || true)")"
   if [ "${actual_vermagic}" != "${expected_vermagic}" ]; then
     log "Refusing ${module}: vermagic='${actual_vermagic}', expected='${expected_vermagic}'"
-    VERMAGIC_MISMATCH=1
+    FATAL=1
     return 1
   fi
 
@@ -120,13 +154,15 @@ load_once() {
     fi
   done
 
-  if [ -e /sys/module/firmware_class/parameters/path ]; then
-    if ! printf '%s' "${HOST_FIRMWARE_ROOT}" > /sys/module/firmware_class/parameters/path; then
-      log "Cannot set firmware_class.path (is /sys writable in this container?)"
-      return 1
-    fi
-  else
-    log "firmware_class.path is absent; relying on default firmware search paths"
+  if ! ensure_sys_rw; then
+    log "No writable sysfs instance for ${FW_PATH_ATTR}"
+    FATAL=1
+    return 1
+  fi
+  if ! printf '%s' "${HOST_FIRMWARE_ROOT}" > "${SYS_RW_ROOT}/${FW_PATH_ATTR}"; then
+    log "Cannot write firmware_class.path through ${SYS_RW_ROOT}"
+    FATAL=1
+    return 1
   fi
 
   if [ -e /sys/class/bluetooth/hci0 ]; then
@@ -171,8 +207,8 @@ for attempt in $(seq 1 60); do
   if load_once; then
     break
   fi
-  if [ "${VERMAGIC_MISMATCH}" -eq 1 ]; then
-    log "vermagic mismatch cannot resolve itself; stopping retries"
+  if [ "${FATAL}" -eq 1 ]; then
+    log "unrecoverable condition reached; stopping retries"
     break
   fi
   log "Retry ${attempt}/60 in 5 seconds"
@@ -186,8 +222,8 @@ fi
 
 cleanup() {
   if [ "${LOADED_BY_US}" -eq 1 ]; then
-    log "Unloading ath3k during app shutdown"
-    rmmod ath3k 2>/dev/null || log "ath3k could not be unloaded (it may be in use)"
+    log "not unloading ath3k on shutdown: the adapter would disappear for HA"
+    log "(disable the app and reboot HAOS to fully revert)"
   fi
 }
 trap cleanup TERM INT
